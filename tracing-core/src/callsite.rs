@@ -530,8 +530,16 @@ mod dispatchers {
 
     pub(super) enum Rebuilder<'a> {
         JustOne,
-        Read(RwLockReadGuard<'a, Vec<dispatcher::Registrar>>),
-        Write(RwLockWriteGuard<'a, Vec<dispatcher::Registrar>>),
+        // Fields drop in declaration order: release the registry guard before
+        // any retained subscriber can run a destructor that re-enters tracing.
+        Read(
+            RwLockReadGuard<'a, Vec<dispatcher::Registrar>>,
+            Vec<dispatcher::Dispatch>,
+        ),
+        Write(
+            RwLockWriteGuard<'a, Vec<dispatcher::Registrar>>,
+            Vec<dispatcher::Dispatch>,
+        ),
     }
 
     impl Dispatchers {
@@ -545,31 +553,49 @@ mod dispatchers {
             if self.has_just_one.load(Ordering::SeqCst) {
                 return Rebuilder::JustOne;
             }
-            Rebuilder::Read(LOCKED_DISPATCHERS.read().unwrap())
+            let mut rebuilder = Rebuilder::Read(LOCKED_DISPATCHERS.read().unwrap(), Vec::new());
+            if let Rebuilder::Read(registrations, retained) = &mut rebuilder {
+                retained.extend(
+                    registrations
+                        .iter()
+                        .filter_map(dispatcher::Registrar::upgrade),
+                );
+            }
+            rebuilder
         }
 
         pub(super) fn register_dispatch(&self, dispatch: &dispatcher::Dispatch) -> Rebuilder<'_> {
-            let mut dispatchers = LOCKED_DISPATCHERS.write().unwrap();
-            dispatchers.retain(|d| d.upgrade().is_some());
-            dispatchers.push(dispatch.registrar());
-            self.has_just_one
-                .store(dispatchers.len() <= 1, Ordering::SeqCst);
-            Rebuilder::Write(dispatchers)
+            let mut rebuilder = Rebuilder::Write(LOCKED_DISPATCHERS.write().unwrap(), Vec::new());
+            if let Rebuilder::Write(registrations, retained) = &mut rebuilder {
+                registrations.retain(|registration| {
+                    if let Some(dispatch) = registration.upgrade() {
+                        // Even cleanup's temporary upgrade can be the last
+                        // strong reference; retain it until the guard is gone.
+                        retained.push(dispatch);
+                        true
+                    } else {
+                        false
+                    }
+                });
+                registrations.push(dispatch.registrar());
+                retained.push(dispatch.clone());
+                self.has_just_one
+                    .store(registrations.len() <= 1, Ordering::SeqCst);
+            }
+            rebuilder
         }
     }
 
     impl Rebuilder<'_> {
-        pub(super) fn for_each(&self, mut f: impl FnMut(&dispatcher::Dispatch)) {
-            let iter = match self {
+        pub(super) fn for_each(&self, f: impl FnMut(&dispatcher::Dispatch)) {
+            let retained = match self {
                 Rebuilder::JustOne => {
                     dispatcher::get_default(f);
                     return;
                 }
-                Rebuilder::Read(vec) => vec.iter(),
-                Rebuilder::Write(vec) => vec.iter(),
+                Rebuilder::Read(_, retained) | Rebuilder::Write(_, retained) => retained,
             };
-            iter.filter_map(dispatcher::Registrar::upgrade)
-                .for_each(|dispatch| f(&dispatch))
+            retained.iter().for_each(f)
         }
     }
 }
