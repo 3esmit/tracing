@@ -169,13 +169,14 @@ impl Match {
             })?
             // TODO: validate field name
             .to_string();
-        let value = parts
-            .next()
-            .map(|part| match regex {
-                true => ValueMatch::parse_regex(part),
-                false => Ok(ValueMatch::parse_non_regex(part)),
-            })
-            .transpose()?;
+        let value = match parts.next() {
+            Some(part) if regex => Some(
+                ValueMatch::parse_regex(part)
+                    .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?,
+            ),
+            Some(part) => Some(ValueMatch::parse_non_regex(part)),
+            None => None,
+        };
         Ok(Match { name, value })
     }
 }
