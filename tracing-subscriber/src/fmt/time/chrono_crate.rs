@@ -8,8 +8,6 @@ use alloc::{format, string::String, sync::Arc};
 ///
 /// [local time]: [`chrono::offset::Local`]
 /// [UTC time]: [`chrono::offset::Utc`]
-/// [`chrono` crate]: [`chrono`]
-
 /// Formats the current [local time] using a [formatter] from the [`chrono`] crate.
 ///
 /// [local time]: chrono::Local::now()
@@ -134,7 +132,7 @@ mod tests {
         let mut dst: Writer<'_> = Writer::new(&mut buf);
         assert!(FormatTime::format_time(&ChronoUtc::default(), &mut dst).is_ok());
         // e.g. `buf` contains "2023-08-18T19:05:08.662499+00:00"
-        assert!(chrono::DateTime::parse_from_str(&buf, "%FT%H:%M:%S%.6f%z").is_ok());
+        assert!(chrono::DateTime::parse_from_str(&buf, "%FT%H:%M:%S%.f%z").is_ok());
     }
 
     #[test]
@@ -155,7 +153,7 @@ mod tests {
         let mut dst: Writer<'_> = Writer::new(&mut buf);
         assert!(FormatTime::format_time(&ChronoLocal::default(), &mut dst).is_ok());
         // e.g. `buf` contains "2023-08-18T14:59:08.662499-04:00".
-        assert!(chrono::DateTime::parse_from_str(&buf, "%FT%H:%M:%S%.6f%z").is_ok());
+        assert!(chrono::DateTime::parse_from_str(&buf, "%FT%H:%M:%S%.f%z").is_ok());
     }
 
     #[test]

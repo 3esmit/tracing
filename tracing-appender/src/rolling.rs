@@ -555,13 +555,16 @@ impl Rotation {
 
     fn date_format(&self) -> Vec<format_description::FormatItem<'static>> {
         match *self {
-            Rotation::MINUTELY => format_description::parse("[year]-[month]-[day]-[hour]-[minute]"),
-            Rotation::HOURLY => format_description::parse("[year]-[month]-[day]-[hour]"),
-            Rotation::DAILY => format_description::parse("[year]-[month]-[day]"),
-            Rotation::WEEKLY => format_description::parse("[year]-[month]-[day]"),
-            Rotation::NEVER => format_description::parse("[year]-[month]-[day]"),
+            Rotation::MINUTELY => {
+                time::macros::format_description!("[year]-[month]-[day]-[hour]-[minute]").to_vec()
+            }
+            Rotation::HOURLY => {
+                time::macros::format_description!("[year]-[month]-[day]-[hour]").to_vec()
+            }
+            Rotation::DAILY => time::macros::format_description!("[year]-[month]-[day]").to_vec(),
+            Rotation::WEEKLY => time::macros::format_description!("[year]-[month]-[day]").to_vec(),
+            Rotation::NEVER => time::macros::format_description!("[year]-[month]-[day]").to_vec(),
         }
-        .expect("Unable to create a formatter; this is a bug in tracing-appender")
     }
 }
 
@@ -901,11 +904,10 @@ mod test {
             now: OffsetDateTime,
         }
 
-        let format = format_description::parse(
+        let format = time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
-         sign:mandatory]:[offset_minute]:[offset_second]",
-        )
-        .unwrap();
+         sign:mandatory]:[offset_minute]:[offset_second]"
+        );
         let directory = tempfile::tempdir().expect("failed to create tempdir");
 
         let test_cases = vec![
@@ -981,11 +983,10 @@ mod test {
 
     #[test]
     fn test_path_concatenation() {
-        let format = format_description::parse(
+        let format = time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
-         sign:mandatory]:[offset_minute]:[offset_second]",
-        )
-        .unwrap();
+         sign:mandatory]:[offset_minute]:[offset_second]"
+        );
         let directory = tempfile::tempdir().expect("failed to create tempdir");
 
         let now = OffsetDateTime::parse("2020-02-01 10:01:00 +00:00:00", &format).unwrap();
@@ -1107,11 +1108,10 @@ mod test {
         use std::sync::{Arc, Mutex};
         use tracing_subscriber::prelude::*;
 
-        let format = format_description::parse(
+        let format = time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
-         sign:mandatory]:[offset_minute]:[offset_second]",
-        )
-        .unwrap();
+         sign:mandatory]:[offset_minute]:[offset_second]"
+        );
 
         let now = OffsetDateTime::parse("2020-02-01 10:01:00 +00:00:00", &format).unwrap();
         let directory = tempfile::tempdir().expect("failed to create tempdir");
@@ -1189,11 +1189,10 @@ mod test {
         use std::sync::{Arc, Mutex};
         use tracing_subscriber::prelude::*;
 
-        let format = format_description::parse(
+        let format = time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
-         sign:mandatory]:[offset_minute]:[offset_second]",
-        )
-        .unwrap();
+         sign:mandatory]:[offset_minute]:[offset_second]"
+        );
 
         let now = OffsetDateTime::parse("2020-02-01 10:01:00 +00:00:00", &format).unwrap();
         let directory = tempfile::tempdir().expect("failed to create tempdir");

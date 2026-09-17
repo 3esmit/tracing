@@ -677,12 +677,19 @@ impl LevelFilter {
     const INFO_USIZE: usize = LevelInner::Info as usize;
     const DEBUG_USIZE: usize = LevelInner::Debug as usize;
     const TRACE_USIZE: usize = LevelInner::Trace as usize;
-    // Using the value of the last variant + 1 ensures that we match the value
-    // for `Option::None` as selected by the niche optimization for
-    // `LevelFilter`. If this is the case, converting a `usize` value into a
-    // `LevelFilter` (in `LevelFilter::current`) will be an identity conversion,
-    // rather than generating a lookup table.
-    const OFF_USIZE: usize = LevelInner::Error as usize + 1;
+    // Match the compiler-selected niche so `current` can be an identity
+    // conversion. The niche for `None` is not fixed across compiler versions.
+    // SAFETY: the source is a valid, initialized constant. Transmute checks
+    // equal sizes, and constant evaluation rejects any uninitialized bytes
+    // in the resulting usize. Every initialized usize bit pattern is valid.
+    const OFF_USIZE: usize = unsafe { core::mem::transmute::<LevelFilter, usize>(Self::OFF) };
+    // Comparisons invert the numeric ordering. OFF must therefore have a
+    // sort key above every level, even if its raw niche is below them.
+    const OFF_SORT_KEY: usize = if Self::OFF_USIZE > Self::ERROR_USIZE {
+        Self::OFF_USIZE
+    } else {
+        Self::ERROR_USIZE + 1
+    };
 
     /// Returns a `LevelFilter` that matches the most verbose [`Level`] that any
     /// currently active [`Subscriber`] will enable.
@@ -886,16 +893,11 @@ impl std::error::Error for ParseLevelFilterError {}
 //    `Option<Level>`) compiles down to a single integer value. This is
 //    necessary for storing the global max in an `AtomicUsize`, and for ensuring
 //    that we use fast integer-integer comparisons, as mentioned previously. In
-//    order to ensure this, we exploit the niche optimization. The niche
-//    optimization for `Option<{enum with a numeric repr}>` will choose
-//    `(HIGHEST_DISCRIMINANT_VALUE + 1)` as the representation for `None`.
-//    Therefore, the integer representation of `LevelFilter::OFF` (which is
-//    `None`) will be the number 5. `OFF` must compare higher than every other
-//    level in order for it to filter as expected. Since we want to use a single
-//    `cmp` instruction, we can't special-case the integer value of `OFF` to
-//    compare higher, as that will generate more code. Instead, we need it to be
-//    on one end of the enum, with `ERROR` on the opposite end, so we assign the
-//    value 0 to `ERROR`.
+//    order to ensure this, we exploit the niche optimization. The compiler's
+//    representation for `None` is determined by `LevelFilter::OFF_USIZE` at
+//    compile time. Comparisons use `OFF_SORT_KEY`, which matches that niche
+//    when it is above every level, and otherwise uses a separate sort key.
+//    This preserves OFF's ordering without assuming which niche rustc chooses.
 //
 //    This *does* mean that when parsing `LevelFilter`s or `Level`s from
 //    `String`s, the integer values are inverted, but that doesn't happen in a
@@ -980,7 +982,7 @@ impl PartialOrd<LevelFilter> for Level {
 fn filter_as_usize(x: &Option<Level>) -> usize {
     match x {
         Some(Level(f)) => *f as usize,
-        None => LevelFilter::OFF_USIZE,
+        None => LevelFilter::OFF_SORT_KEY,
     }
 }
 
@@ -1101,7 +1103,7 @@ mod tests {
     #[test]
     fn level_filter_reprs() {
         let mapping = [
-            (LevelFilter::OFF, LevelInner::Error as usize + 1),
+            (LevelFilter::OFF, LevelFilter::OFF_USIZE),
             (LevelFilter::ERROR, LevelInner::Error as usize),
             (LevelFilter::WARN, LevelInner::Warn as usize),
             (LevelFilter::INFO, LevelInner::Info as usize),
@@ -1117,6 +1119,43 @@ mod tests {
                 mem::transmute::<LevelFilter, usize>(filter)
             };
             assert_eq!(expected, repr, "repr changed for {:?}", filter)
+        }
+    }
+
+    #[test]
+    fn level_filter_ordering() {
+        let filters = [
+            LevelFilter::OFF,
+            LevelFilter::ERROR,
+            LevelFilter::WARN,
+            LevelFilter::INFO,
+            LevelFilter::DEBUG,
+            LevelFilter::TRACE,
+        ];
+        for (i, filter) in filters.iter().enumerate() {
+            for (j, other) in filters.iter().enumerate() {
+                assert_eq!(filter.cmp(other), i.cmp(&j));
+                assert_eq!(filter.partial_cmp(other), Some(i.cmp(&j)));
+                assert_eq!(filter == other, i == j);
+                assert_eq!(filter < other, i < j);
+                assert_eq!(filter <= other, i <= j);
+                assert_eq!(filter > other, i > j);
+                assert_eq!(filter >= other, i >= j);
+                if let Some(level) = other.into_level() {
+                    assert_eq!(filter.partial_cmp(&level), Some(i.cmp(&j)));
+                    assert_eq!(level.partial_cmp(filter), Some(j.cmp(&i)));
+                    assert_eq!(*filter == level, i == j);
+                    assert_eq!(level == *filter, j == i);
+                    assert_eq!(*filter < level, i < j);
+                    assert_eq!(level < *filter, j < i);
+                    assert_eq!(*filter <= level, i <= j);
+                    assert_eq!(level <= *filter, j <= i);
+                    assert_eq!(*filter > level, i > j);
+                    assert_eq!(level > *filter, j > i);
+                    assert_eq!(*filter >= level, i >= j);
+                    assert_eq!(level >= *filter, j >= i);
+                }
+            }
         }
     }
 }

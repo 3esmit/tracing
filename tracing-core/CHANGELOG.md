@@ -1,3 +1,12 @@
+# Unreleased
+
+### Fixed
+
+- Release the dispatcher registry lock before dropping retained subscribers,
+  preventing deadlocks when subscriber destruction re-enters tracing.
+- Derive the OFF level encoding from the compiler-selected niche while
+  preserving level/filter ordering across compiler versions.
+
 # 0.1.36 (December 18, 2025)
 
 - Fix `record_all` panic ([#3432])

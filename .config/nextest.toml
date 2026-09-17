@@ -7,6 +7,11 @@ failure-output = "immediate-final"
 # Do not cancel the test run on the first failure.
 fail-fast = false
 
+# Bound the regression if subscriber destruction re-enters a locked registry.
+[[profile.ci.overrides]]
+filter = 'test(subscriber_drop_during_interest_rebuild)'
+slow-timeout = { period = "5s", terminate-after = 2 }
+
 # TODO(eliza): uncomment this when we can get nicer JUnit output from nextest...
 # [profile.ci.junit]
 # path = "junit.xml"
